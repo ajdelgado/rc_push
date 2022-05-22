@@ -7,7 +7,8 @@ if [ $(whoami) != "root" ]; then
 fi
 
 python3 setup.py install
-useradd -c "Rocket.Chat push user" -m -r -s /bin/false rc_push
+
+grep "^rc_push:" /etc/passwd || useradd -c "Rocket.Chat push user" -m -r -s /bin/false rc_push
 
 cat << EOF > /etc/systemd/system/rc_push.service
 [Unit]

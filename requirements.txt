@@ -1,4 +1,4 @@
 click
 click_config_file
-rocketchat_API
+rocketchat-API
 requests
