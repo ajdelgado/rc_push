@@ -17,8 +17,11 @@ OnFailure=status_email_antoniodelgado@%n.service
 
 [Service]
 User=rc_push
-ExecStart=??
+ExecStart=/usr/local/bin/rc_push.py
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+systemctl daemon-reload
+systemctl start rc_push.service
