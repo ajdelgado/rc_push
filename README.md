@@ -6,7 +6,7 @@
 
 ### Linux
 
-  `sudo install.sh`
+  `sudo ./install.sh`
 
 ### Windows (from PowerShell)
 
