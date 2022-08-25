@@ -18,7 +18,7 @@ import stat
 import json
 class rc_push:
 
-    def __init__(self, debug_level, log_file, user, password, rc_url, ntfy_url, ntfy_topic, ntfy_user, ntfy_pass, channels):
+    def __init__(self, debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic, ntfy_user, ntfy_pass, channels):
         ''' Initial function called when object is created '''
         self.config = dict()
         self.config['debug_level'] = debug_level
@@ -37,12 +37,30 @@ class rc_push:
         self.session = requests.Session()
         self.wait = 30
         self._log.debug(f"Connecting to '{rc_url}' as the user '{user}'...")
-        self.rc = RocketChat(
-            user,
-            password,
-            server_url=rc_url,
-            session=self.session
-        )
+        if use_auth_token:
+            try:
+                self.rc = RocketChat(
+                    user_id=user,
+                    auth_token=password,
+                    server_url=rc_url,
+                    session=self.session
+                )
+            #except rocketchat_API.APIExceptions.RocketExceptions.RocketAuthenticationException as error:
+            except Exception as error:
+                self._log.error(f"Error connecting to Rocket Chat server '{rc_url}' with user id '{user}'. {error}")
+                exit(1)
+        else:
+            try:
+                self.rc = RocketChat(
+                    user,
+                    password,
+                    server_url=rc_url,
+                    session=self.session
+                )
+            #except rocketchat_API.APIExceptions.RocketExceptions.RocketAuthenticationException as error:
+            except Exception as error:
+                self._log.error(f"Error connecting to Rocket Chat server '{rc_url}' as user '{user}'. {error}")
+                exit(1)
         self.notifications = {}
 
         while True:
@@ -234,6 +252,7 @@ class rc_push:
 @click.option('--log-file', '-l', help="File to store all debug messages.")
 @click.option('--user', '-u', required=True, help='Rocket.Chat user name')
 @click.option('--password', '-p', required=True, help='Rocket.Chat user password')
+@click.option('--use-auth-token', '-a', default=False, help='If true, would consider user the user_id and password the authentication token to use to connecto to RicketChat')
 @click.option('--rc-url', '-r', required=True, help='Rocket.Chat URL')
 @click.option('--ntfy-url', '-n', required=True, help='URL of your ntfy instance')
 @click.option('--ntfy-topic', '-t', required=True, help='Topic in ntfy')
@@ -241,9 +260,9 @@ class rc_push:
 @click.option('--ntfy-pass', '-P', required=True, help='User password in ntfy')
 @click.option('--channels', '-c', multiple=True, help='Channel to check for messages. If omited all channels will be check, and might take long.')
 @click_config_file.configuration_option()
-def __main__(debug_level, log_file, user, password, rc_url, ntfy_url, ntfy_topic,
+def __main__(debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic,
              ntfy_user, ntfy_pass, channels):
-    object = rc_push(debug_level, log_file, user, password, rc_url, ntfy_url, ntfy_topic,
+    object = rc_push(debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic,
                      ntfy_user, ntfy_pass, channels)
     object._log.info('Initialized rc_push')
 
