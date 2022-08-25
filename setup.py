@@ -9,7 +9,7 @@ if os.access(requirements_file, os.R_OK):
 setuptools.setup(
     scripts=['rc_push/rc_push.py'],
     author="Antonio J. Delgado",
-    version='0.0.5',
+    version='0.0.6',
     name='rc_push',
     author_email="",
     url="",
