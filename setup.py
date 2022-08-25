@@ -1,5 +1,9 @@
 import setuptools
 import os
+import configparser
+
+setup_config = configparser.ConfigParser()
+setup_config.read('setup.cfg')
 
 requirements = list()
 requirements_file = 'requirements.txt'
@@ -9,8 +13,8 @@ if os.access(requirements_file, os.R_OK):
 setuptools.setup(
     scripts=['rc_push/rc_push.py'],
     author="Antonio J. Delgado",
-    version='0.0.6',
-    name='rc_push',
+    version=setup_config['metadata']['version'],
+    name=setup_config['metadata']['name'],
     author_email="",
     url="",
     description="__description__",
