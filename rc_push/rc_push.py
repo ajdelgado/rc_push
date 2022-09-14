@@ -69,15 +69,15 @@ class rc_push:
             print(f"Waiting {self.wait} seconds...")
             time.sleep(self.wait)
             
-            # print("Checking groups...")
-            # self.check_new_group_messages()
-            # print(f"Waiting {self.wait} seconds...")
-            # time.sleep(self.wait)
+            print("Checking groups...")
+            self.check_new_group_messages()
+            print(f"Waiting {self.wait} seconds...")
+            time.sleep(self.wait)
             
-            # print("Checking unread channels...")
-            # self.check_new_channel_messages()
-            # print(f"Waiting {self.wait} seconds...")
-            # time.sleep(self.wait)
+            print("Checking unread channels...")
+            self.check_new_channel_messages()
+            print(f"Waiting {self.wait} seconds...")
+            time.sleep(self.wait)
 
     def send_message_to_user(self, user, message):
         rooms = self.rc.rooms_get().json()['update']
@@ -131,8 +131,8 @@ class rc_push:
 
     def check_new_group_messages(self):
         groups = self.rc.groups_list().json()
-        #print(json.dumps(groups, indent=2))
         for group in groups['groups']:
+            self._log.debug(f"Group: {json.dumps(groups, indent=2)}")
             if ('channels' in self.config
             and len(self.config['channels']) > 0
             and group['name'] not in self.config['channels']):
@@ -172,6 +172,7 @@ class rc_push:
 
     def check_new_channel_messages(self):
         for channel in self.rc.channels_list().json()['channels']:
+            self._log.debug(f"Channel: {json.dumps(channel, indent=2)}")
             if ('channels' in self.config
             and len(self.config['channels']) > 0
             and channel['name'] not in self.config['channels']):
