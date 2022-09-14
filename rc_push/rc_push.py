@@ -35,7 +35,7 @@ class rc_push:
         self._init_log()
 
         self.session = requests.Session()
-        self.wait = 30
+        self.wait = 1
         self._log.debug(f"Connecting to '{rc_url}' as the user '{user}'...")
         if use_auth_token:
             try:
@@ -100,15 +100,15 @@ class rc_push:
             room_counters = self.rc.im_counters(room_id=im['_id'])
             #print(room_counters)
             if 'unreads' not in room_counters.json():
-                # print(room_counters.headers)
-                # print(room_counters.json())
-                ratelimit_reset = room_counters.headers['X-RateLimit-Reset']
+                self._log.debug(room_counters.headers)
+                self._log.debug(room_counters.json())
+                ratelimit_reset = room_counters.headers.get('X-RateLimit-Reset', 0)
                 wait = int((int(ratelimit_reset)/1000) - time.time()) + 1
                 self._log.warning(f"Rate-limit exceded, waiting {wait} seconds")
                 time.sleep(wait)
                 # print(room_counters.headers)
                 # print(room_counters.json())
-                room_counters = self.rc.channels_counters(room_id=im['_id'])
+                room_counters = self.rc.im_counters(room_id=im['_id'])
                 if 'unreads' not in room_counters.json():
                     return False
             else:
@@ -137,7 +137,9 @@ class rc_push:
             room_counters = self.rc.call_api_get("groups.counters", roomId=group['_id'])
             #print(room_counters)
             if 'unreads' not in room_counters.json():
-                ratelimit_reset = room_counters.headers['X-RateLimit-Reset']
+                self._log.debug(room_counters.headers)
+                self._log.debug(room_counters.json())
+                ratelimit_reset = room_counters.headers.get('X-RateLimit-Reset', 0)
                 wait = int((int(ratelimit_reset)/1000) - time.time()) + 1
                 self._log.warning(f"Rate-limit exceded, waiting {wait} seconds")
                 time.sleep(wait)
@@ -174,7 +176,9 @@ class rc_push:
             room_counters = self.rc.channels_counters(room_id=channel['_id'])
             #print(room_counters)
             if 'unreads' not in room_counters.json():
-                ratelimit_reset = room_counters.headers['X-RateLimit-Reset']
+                self._log.debug(room_counters.headers)
+                self._log.debug(room_counters.json())
+                ratelimit_reset = room_counters.headers.get('X-RateLimit-Reset', 0)
                 wait = int((int(ratelimit_reset)/1000) - time.time()) + 1
                 self._log.warning(f"Rate-limit exceded, waiting {wait} seconds")
                 time.sleep(wait)
