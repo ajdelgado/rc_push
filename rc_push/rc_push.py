@@ -69,15 +69,15 @@ class rc_push:
             print(f"Waiting {self.wait} seconds...")
             time.sleep(self.wait)
             
-            print("Checking groups...")
-            self.check_new_group_messages()
-            print(f"Waiting {self.wait} seconds...")
-            time.sleep(self.wait)
+            # print("Checking groups...")
+            # self.check_new_group_messages()
+            # print(f"Waiting {self.wait} seconds...")
+            # time.sleep(self.wait)
             
-            print("Checking unread channels...")
-            self.check_new_channel_messages()
-            print(f"Waiting {self.wait} seconds...")
-            time.sleep(self.wait)
+            # print("Checking unread channels...")
+            # self.check_new_channel_messages()
+            # print(f"Waiting {self.wait} seconds...")
+            # time.sleep(self.wait)
 
     def send_message_to_user(self, user, message):
         rooms = self.rc.rooms_get().json()['update']
@@ -96,33 +96,38 @@ class rc_push:
             self._log.error(f"Not found list of 'ims': {ims.json()}")
             return False
         for im in ims.json()['ims']:
-            #print(json.dumps(im, indent=2))
-            room_counters = self.rc.im_counters(room_id=im['_id'])
-            #print(room_counters)
-            if 'unreads' not in room_counters.json():
-                self._log.debug(room_counters.headers)
-                self._log.debug(room_counters.json())
-                ratelimit_reset = room_counters.headers.get('X-RateLimit-Reset', 0)
-                wait = int((int(ratelimit_reset)/1000) - time.time()) + 1
-                self._log.warning(f"Rate-limit exceded, waiting {wait} seconds")
-                time.sleep(wait)
-                # print(room_counters.headers)
-                # print(room_counters.json())
+            self._log.debug(f"Private message room: {json.dumps(im, indent=2)}")
+            if im['msgs'] > 0 and 'lastMessage' in im:
                 room_counters = self.rc.im_counters(room_id=im['_id'])
+                #print(room_counters)
                 if 'unreads' not in room_counters.json():
-                    return False
+                    self._log.debug(f"Counters headers: {room_counters.headers}")
+                    self._log.debug(f"Counters result: {room_counters.json()}")
+                    ratelimit_reset = room_counters.headers.get('X-RateLimit-Reset', 0)
+                    wait = int((int(ratelimit_reset)/1000) - time.time()) + 2
+                    self._log.warning(f"Rate-limit exceded, waiting {wait} seconds")
+                    time.sleep(wait)
+                    room_counters = self.rc.im_counters(room_id=im['_id'])
+                    self._log.debug(f"Counters headers: {room_counters.headers}")
+                    self._log.debug(f"Counters result: {room_counters.json()}")
+                    if 'unreads' not in room_counters.json():
+                        return False
+                else:
+                    self.wait = 1
+                unreads = room_counters.json().get('unreads', 0)
+                users = "' '".join(im['usernames'])
+                self._log.debug(f"There are {unreads} unread private messages in chat {im['_id']} between users '{users}'.")
+                if unreads and int(unreads) > 0:
+                    if im['_id'] not in self.notifications or self.notifications[im['_id']] != unreads:
+                        # print(json.dumps(im, indent=2))
+                        self.notifications[im['_id']] = unreads
+                        self.ntfy_send(message=f"You have {unreads} unread private message(s) from '{im['lastMessage']['u']['name']}': '{im['lastMessage']['md'][0]['value'][0]['value']}'")
+                if int(room_counters.headers['X-RateLimit-Remaining']) < 5:
+                    time.sleep(self.wait * 2)
+                # else:
+                #     print(f"{int(room_counters.headers['X-RateLimit-Remaining'])} requests remaining...")
             else:
-                self.wait = 1
-            unreads = room_counters.json()['unreads']
-            if unreads and int(unreads) > 0:
-                if im['_id'] not in self.notifications or self.notifications[im['_id']] != unreads:
-                    # print(json.dumps(im, indent=2))
-                    self.notifications[im['_id']] = unreads
-                    self.ntfy_send(message=f"You have {unreads} unread message(s) from '{im['lastMessage']['u']['name']}': '{im['lastMessage']['md'][0]['value'][0]['value']}'")
-            if int(room_counters.headers['X-RateLimit-Remaining']) < 5:
-                time.sleep(self.wait * 2)
-            # else:
-            #     print(f"{int(room_counters.headers['X-RateLimit-Remaining'])} requests remaining...")
+                self._log.debug(f"Skipping because there are no messages")
 
     def check_new_group_messages(self):
         groups = self.rc.groups_list().json()
