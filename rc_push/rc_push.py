@@ -219,7 +219,7 @@ class rc_push:
 
 
     def ntfy_send(self, message):
-        if not self.redis.get(f"rc_push_ntfy_{message}"):
+        if not self.redis.get(f"rc_push_ntfy_{message}") == "1":
             url = f"{self.config['ntfy_url']}/{self.config['ntfy_topic']}"
             result = self.session.post(
                 url,
@@ -229,7 +229,7 @@ class rc_push:
             if result.status_code > 299:
                 self._log.error(f"Error {result.status_code} publishing in ntfy.")
                 self._log.error(result.json())
-            self.redis.set(f"rc_push_ntfy_{message}", True)
+            self.redis.set(f"rc_push_ntfy_{message}", "1")
         else:
             self._log.debug(f"Not sending again message '{message}'")
             
