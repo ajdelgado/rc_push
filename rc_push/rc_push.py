@@ -16,9 +16,11 @@ from rocketchat_API.rocketchat import RocketChat
 import time
 import stat
 import json
+import redis
+
 class rc_push:
 
-    def __init__(self, debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic, ntfy_user, ntfy_pass, channels):
+    def __init__(self, debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic, ntfy_user, ntfy_pass, channels, redis_url):
         ''' Initial function called when object is created '''
         self.config = dict()
         self.config['debug_level'] = debug_level
@@ -33,6 +35,11 @@ class rc_push:
             log_file = os.path.join(os.environ.get('HOME', os.environ.get('USERPROFILE', os.getcwd())), 'log', 'rc_push.log')
         self.config['log_file'] = log_file
         self._init_log()
+
+        self.redis = redis.from_url(redis_url)
+        if not self.redis.pint():
+            self._log.error(f"Error connecting to Redis server '{redis_url}'.")
+            exit(1)
 
         self.session = requests.Session()
         self.wait = 1
@@ -212,15 +219,20 @@ class rc_push:
 
 
     def ntfy_send(self, message):
-        url = f"{self.config['ntfy_url']}/{self.config['ntfy_topic']}"
-        result = self.session.post(
-            url,
-            data=message.encode(encoding='utf-8'),
-            auth=requests.auth.HTTPBasicAuth(self.config['ntfy_user'], self.config['ntfy_pass'])
-        )
-        if result.status_code > 299:
-            self._log.error(f"Error {result.status_code} publishing in ntfy.")
-            self._log.error(result.json())
+        if not self.redis.get(f"rc_push_ntfy_{message}"):
+            url = f"{self.config['ntfy_url']}/{self.config['ntfy_topic']}"
+            result = self.session.post(
+                url,
+                data=message.encode(encoding='utf-8'),
+                auth=requests.auth.HTTPBasicAuth(self.config['ntfy_user'], self.config['ntfy_pass'])
+            )
+            if result.status_code > 299:
+                self._log.error(f"Error {result.status_code} publishing in ntfy.")
+                self._log.error(result.json())
+            self.redis.set(f"rc_push_ntfy_{message}", True)
+        else:
+            self._log.debug(f"Not sending again message '{message}'")
+            
 
     def _init_log(self):
         ''' Initialize log object '''
@@ -262,19 +274,21 @@ class rc_push:
 @click.option('--log-file', '-l', help="File to store all debug messages.")
 @click.option('--user', '-u', required=True, help='Rocket.Chat user name')
 @click.option('--password', '-p', required=True, help='Rocket.Chat user password')
-@click.option('--use-auth-token', '-a', default=False, help='If true, would consider user the user_id and password the authentication token to use to connecto to RicketChat')
+@click.option('--use-auth-token', '-a', default=False,
+    help='If true, would consider user the user_id and password the authentication token to use to connecto to RicketChat')
 @click.option('--rc-url', '-r', required=True, help='Rocket.Chat URL')
 @click.option('--ntfy-url', '-n', required=True, help='URL of your ntfy instance')
 @click.option('--ntfy-topic', '-t', required=True, help='Topic in ntfy')
 @click.option('--ntfy-user', '-U', required=True, help='User name in ntfy')
 @click.option('--ntfy-pass', '-P', required=True, help='User password in ntfy')
 @click.option('--channels', '-c', multiple=True, help='Channel to check for messages. If omited all channels will be check, and might take long.')
+@click.option('--redis-url', '-R', default='unix:///var/run/redis/redis-server.sock?decode_responses=True&health_check_interval=2',
+    help='URL to connect to redis server. Check documentation for from_url at https://github.com/redis/redis-py/blob/master/docs/examples/connection_examples.ipynb')
 @click_config_file.configuration_option()
 def __main__(debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic,
-             ntfy_user, ntfy_pass, channels):
+             ntfy_user, ntfy_pass, channels, redis_url):
     object = rc_push(debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic,
-                     ntfy_user, ntfy_pass, channels)
-    object._log.info('Initialized rc_push')
+                     ntfy_user, ntfy_pass, channels, redis_url)
 
 if __name__ == "__main__":
     __main__()

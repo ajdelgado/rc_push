@@ -2,3 +2,4 @@ click
 click_config_file
 rocketchat-API
 requests
+redis
