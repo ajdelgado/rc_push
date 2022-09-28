@@ -37,7 +37,7 @@ class rc_push:
         self._init_log()
 
         self.redis = redis.from_url(redis_url)
-        if not self.redis.pint():
+        if not self.redis.ping():
             self._log.error(f"Error connecting to Redis server '{redis_url}'.")
             exit(1)
 
