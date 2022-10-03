@@ -62,5 +62,11 @@ ExecStart=/usr/local/bin/rc_push.py --config /etc/rc_push.conf
 WantedBy=multi-user.target
 EOF
 
+if [ $(grep '^unixsocketperm ' /etc/redis/redis.conf) ]; then
+    sed -i 's/^unixsocketperm .*/unixsocketperm 770/g' /etc/redis/redis.conf
+else
+    echo 'unixsocketperm 770' >> /etc/redis/redis.conf
+fi
+
 systemctl daemon-reload
 systemctl start rc_push.service
