@@ -20,53 +20,46 @@ import redis
 
 class rc_push:
 
-    def __init__(self, debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic, ntfy_user, ntfy_pass, channels, redis_url):
+    def __init__(self, **kwargs):
         ''' Initial function called when object is created '''
-        self.config = dict()
-        self.config['debug_level'] = debug_level
-        self.config['user'] = user
-        self.config['channels'] = channels
-        self.config['ntfy_url'] = ntfy_url
-        self.config['ntfy_topic'] = ntfy_topic
-        self.config['ntfy_user'] = ntfy_user
-        self.config['ntfy_pass'] = ntfy_pass
+        self.config = kwargs
 
-        if log_file is None:
+        if self.config['log_file'] is None:
             log_file = os.path.join(os.environ.get('HOME', os.environ.get('USERPROFILE', os.getcwd())), 'log', 'rc_push.log')
-        self.config['log_file'] = log_file
+            self.config['log_file'] = log_file
         self._init_log()
 
-        self.redis = redis.from_url(redis_url)
+        self.redis = redis.from_url(self.config['redis_url'])
         if not self.redis.ping():
-            self._log.error(f"Error connecting to Redis server '{redis_url}'.")
+            self._log.error(f"Error connecting to Redis server '{self.config['redis_url']}'.")
             exit(1)
 
         self.session = requests.Session()
         self.wait = 1
-        self._log.debug(f"Connecting to '{rc_url}' as the user '{user}'...")
-        if use_auth_token:
+        self._log.debug(f"Connecting to '{self.config['rc_url']}' as the user '{self.config['user']}'...")
+        if self.config['use_auth_token']:
             try:
                 self.rc = RocketChat(
-                    user_id=user,
-                    auth_token=password,
-                    server_url=rc_url,
+                    user_id=self.config['user'],
+                    auth_token=self.config['password'],
+                    server_url=self.config['rc_url'],
                     session=self.session
                 )
             #except rocketchat_API.APIExceptions.RocketExceptions.RocketAuthenticationException as error:
             except Exception as error:
-                self._log.error(f"Error connecting to Rocket Chat server '{rc_url}' with user id '{user}'. {error}")
+                self._log.error(f"Error connecting to Rocket Chat server '{self.config['rc_url']}' with user id '{self.config['user']}'. {error}")
                 exit(1)
         else:
             try:
                 self.rc = RocketChat(
-                    user,
-                    password,
-                    server_url=rc_url,
+                    self.config['user'],
+                    self.config['password'],
+                    server_url=self.config['rc_url'],
                     session=self.session
                 )
             #except rocketchat_API.APIExceptions.RocketExceptions.RocketAuthenticationException as error:
             except Exception as error:
-                self._log.error(f"Error connecting to Rocket Chat server '{rc_url}' as user '{user}'. {error}")
+                self._log.error(f"Error connecting to Rocket Chat server '{self.config['rc_url']}' as user '{self.config['user']}'. {error}")
                 exit(1)
         self.notifications = {}
 
@@ -76,15 +69,17 @@ class rc_push:
             print(f"Waiting {self.wait} seconds...")
             time.sleep(self.wait)
             
-            print("Checking groups...")
-            self.check_new_group_messages()
-            print(f"Waiting {self.wait} seconds...")
-            time.sleep(self.wait)
+            if self.config['check_groups']:
+                print("Checking groups...")
+                self.check_new_group_messages()
+                print(f"Waiting {self.wait} seconds...")
+                time.sleep(self.wait)
             
-            print("Checking unread channels...")
-            self.check_new_channel_messages()
-            print(f"Waiting {self.wait} seconds...")
-            time.sleep(self.wait)
+            if self.config['check_channels']:
+                print("Checking unread channels...")
+                self.check_new_channel_messages()
+                print(f"Waiting {self.wait} seconds...")
+                time.sleep(self.wait)
 
     def send_message_to_user(self, user, message):
         rooms = self.rc.rooms_get().json()['update']
@@ -99,6 +94,7 @@ class rc_push:
 
     def check_new_private_messages(self):
         ims = self.rc.im_list()
+        self._log.info(f"Checking {len(ims.json())} private rooms...")
         if 'ims' not in ims.json():
             self._log.error(f"Not found list of 'ims': {ims.json()}")
             return False
@@ -138,12 +134,13 @@ class rc_push:
 
     def check_new_group_messages(self):
         groups = self.rc.groups_list().json()
+        self._log.info(f"Checking {len(groups)} groups...")
         for group in groups['groups']:
             self._log.debug(f"Group: {json.dumps(groups, indent=2)}")
             if ('channels' in self.config
             and len(self.config['channels']) > 0
             and group['name'] not in self.config['channels']):
-                self._log.debug(f"Skipping non-listed group '{group['name']}'.")
+                self._log.info(f"Skipping non-listed group '{group['name']}'.")
                 continue
             #print(json.dumps(group, indent=2))
             room_counters = self.rc.call_api_get("groups.counters", roomId=group['_id'])
@@ -165,9 +162,14 @@ class rc_push:
             unreads = room_counters.json()['unreads']
             if unreads and int(unreads) > 0:
                 if group['_id'] not in self.notifications or self.notifications[group['_id']] != unreads:
-                    # print(json.dumps(channel, indent=2))
+                    print(json.dumps(group, indent=2))
                     self.notifications[group['_id']] = unreads
-                    self.ntfy_send(message=f"You have {unreads} unread message(s) in '{group['name']}' from '{group['lastMessage']['u']['name']}': '{group['lastMessage']['md'][0]['value'][0]['value']}'")
+                    if 'lastMessage' in group:
+                        sender = group['lastMessage']['u']['name']
+                        message = group['lastMessage']['md'][0]['value'][0]['value']
+                        self.ntfy_send(message=f"You have {unreads} unread message(s) in '{group['name']}' from '{sender}': '{message}'")
+                    else:
+                        self.ntfy_send(message=f"You have {unreads} unread message(s) in '{group['name']}'")
                 else:
                     self._log.debug(f"No changes in unread {unreads}")
             else:
@@ -178,7 +180,9 @@ class rc_push:
             #     print(f"{int(room_counters.headers['X-RateLimit-Remaining'])} requests remaining...")
 
     def check_new_channel_messages(self):
-        for channel in self.rc.channels_list().json()['channels']:
+        channels = self.rc.channels_list().json()['channels']
+        self._log.info(f"Checking {len(channels)} channels...")
+        for channel in channels:
             self._log.debug(f"Channel: {json.dumps(channel, indent=2)}")
             if ('channels' in self.config
             and len(self.config['channels']) > 0
@@ -207,7 +211,10 @@ class rc_push:
                 if channel['_id'] not in self.notifications or self.notifications[channel['_id']] != unreads:
                     # print(json.dumps(channel, indent=2))
                     self.notifications[channel['_id']] = unreads
-                    self.ntfy_send(message=f"You have {unreads} unread message(s) in '{channel['name']}' from '{channel['lastMessage']['u']['name']}': '{channel['lastMessage']['md'][0]['value'][0]['value']}'")
+                    if 'lastMessage' in channel:
+                        self.ntfy_send(message=f"You have {unreads} unread message(s) in '{channel['name']}' from '{channel['lastMessage']['u']['name']}': '{channel['lastMessage']['md'][0]['value'][0]['value']}'")
+                    else:
+                        self.ntfy_send(message=f"You have {unreads} unread message(s) in '{channel['name']}'")
                 else:
                     self._log.debug(f"No changes in unread {unreads}")
             else:
@@ -221,6 +228,7 @@ class rc_push:
     def ntfy_send(self, message):
         if not self.redis.get(f"rc_push_ntfy_{message}") == "1":
             url = f"{self.config['ntfy_url']}/{self.config['ntfy_topic']}"
+            self._log.info(f"Posting to ntfy message '{message}'...")
             result = self.session.post(
                 url,
                 data=message.encode(encoding='utf-8'),
@@ -284,11 +292,11 @@ class rc_push:
 @click.option('--channels', '-c', multiple=True, help='Channel to check for messages. If omited all channels will be check, and might take long.')
 @click.option('--redis-url', '-R', default='unix:///var/run/redis/redis-server.sock?decode_responses=True&health_check_interval=2',
     help='URL to connect to redis server. Check documentation for from_url at https://github.com/redis/redis-py/blob/master/docs/examples/connection_examples.ipynb')
+@click.option('--check-groups', '-g', default=True, help='Check new messages in groups')
+@click.option('--check-channels', '-C', default=True, help='Check new messages in channels')
 @click_config_file.configuration_option()
-def __main__(debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic,
-             ntfy_user, ntfy_pass, channels, redis_url):
-    object = rc_push(debug_level, log_file, user, password, use_auth_token, rc_url, ntfy_url, ntfy_topic,
-                     ntfy_user, ntfy_pass, channels, redis_url)
+def __main__(**kwargs):
+    object = rc_push(**kwargs)
 
 if __name__ == "__main__":
     __main__()
