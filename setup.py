@@ -17,7 +17,7 @@ setuptools.setup(
     name=setup_config['metadata']['name'],
     author_email="",
     url="",
-    description="__description__",
+    description="Push RocketChat notifications to a ntfy service",
     license="GPLv3",
     install_requires=requirements,
     #keywords=["my", "script", "does", "things"]
