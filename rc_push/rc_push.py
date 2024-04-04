@@ -8,17 +8,18 @@
 import sys
 import os
 import logging
-import click
-import click_config_file
-from logging.handlers import SysLogHandler
-import requests
-from rocketchat_API.rocketchat import RocketChat
 import time
 import json
+from logging.handlers import SysLogHandler
+import click
+import click_config_file
+import requests
+from rocketchat_API.rocketchat import RocketChat
 import redis
 
 
 class rc_push:
+    '''Push RocketChat message notifications to ntfy'''
 
     def __init__(self, **kwargs):
         ''' Initial function called when object is created '''
@@ -36,17 +37,13 @@ class rc_push:
 
         self.redis = redis.from_url(self.config['redis_url'])
         if not self.redis.ping():
-            self._log.error(
-                f"Error connecting to Redis server: {self.config['redis_url']}"
-            )
-            exit(1)
+            self._log.error("Error connecting to Redis server: %s", self.config['redis_url'])
+            sys.exit(1)
 
         self.session = requests.Session()
-        self.wait = 1
+        self.wait = self.config['wait']
         self._log.debug(
-            f"""Connecting to '{self.config['rc_url']}' as the user
-'{self.config['user']}'..."""
-        )
+            "Connecting to '%s' as the user '%s'...", self.config['rc_url'], self.config['user'])
         if self.config['use_auth_token']:
             try:
                 self.rc = RocketChat(
@@ -58,9 +55,8 @@ class rc_push:
             # except rocketchat_API.APIExceptions.RocketExceptions
             # .RocketAuthenticationException as error:
             except Exception as error:
-                self._log.error(f"""Error connecting to Rocket Chat server
-'{self.config['rc_url']}' with user id '{self.config['user']}'. {error}""")
-                exit(1)
+                self._log.error("Error connecting to Rocket Chat server '%s' with user id '%s'. %s", self.config['rc_url'], self.config['user'], error)
+                sys.exit(1)
         else:
             try:
                 self.rc = RocketChat(
@@ -72,11 +68,8 @@ class rc_push:
             # except rocketchat_API.APIExceptions.RocketExceptions
             # .RocketAuthenticationException as error:
             except Exception as error:
-                self._log.error(
-                    f"""Error connecting to Rocket Chat server
-'{self.config['rc_url']}' as user '{self.config['user']}'. {error}"""
-                )
-                exit(1)
+                self._log.error("Error connecting to Rocket Chat server '%s' as user '%s'. %s", self.config['rc_url'], self.config['user'], error)
+                sys.exit(1)
         self.notifications = {}
 
         while True:
@@ -110,46 +103,61 @@ class rc_push:
         }
         return self.rc.chat_send_message(message)
 
+    def _join_names(self, items):
+        if len(items) == 1:
+            return items[0]
+        count=0
+        for item in items:
+            count +=1
+            if count > 1:
+                if count > len(items)-1:
+                    result = f"{result} and {item}"
+                else:
+                    result = f"{result}, {item}"
+            else:
+                result = item
+        return result
+
     def check_new_private_messages(self):
+        '''Check for new private messages'''
         ims = self.rc.im_list()
-        self._log.info(f"Checking {len(ims.json())} private rooms...")
+        self._log.info("Checking %s private rooms...", len(ims.json()))
         if 'ims' not in ims.json():
-            self._log.error(f"Not found list of 'ims': {ims.json()}")
+            self._log.error("Not found list of 'ims': %s", ims.json())
             return False
         for im in ims.json()['ims']:
+            # self._log.debug("Private message room: %s", json.dumps(im, indent=2))
+            users = self._join_names(im['usernames'])
             self._log.debug(
-                f"Private message room: {json.dumps(im, indent=2)}"
+                'Private message room between %s has %s messages',
+                users,
+                im['msgs']
             )
             if im['msgs'] > 0 and 'lastMessage' in im:
                 room_counters = self.rc.im_counters(room_id=im['_id'])
                 # print(room_counters)
                 if 'unreads' not in room_counters.json():
-                    self._log.debug(
-                        f"Counters headers: {room_counters.headers}"
-                    )
-                    self._log.debug(f"Counters result: {room_counters.json()}")
+                    self._log.debug("Counters headers: %s", room_counters.headers)
+                    self._log.debug("Counters result: %s", room_counters.json())
                     ratelimit_reset = room_counters.headers.get(
                         'X-RateLimit-Reset', 0
                     )
                     wait = int((int(ratelimit_reset)/1000) - time.time()) + 2
-                    self._log.warning(
-                        f"Rate-limit exceded, waiting {wait} seconds"
-                    )
+                    self._log.warning("Rate-limit exceded, waiting %s seconds", wait)
                     time.sleep(wait)
                     room_counters = self.rc.im_counters(room_id=im['_id'])
-                    self._log.debug(
-                        f"Counters headers: {room_counters.headers}"
-                    )
-                    self._log.debug(f"Counters result: {room_counters.json()}")
+                    self._log.debug("Counters headers: %s", room_counters.headers)
+                    self._log.debug("Counters result: %s", room_counters.json())
                     if 'unreads' not in room_counters.json():
                         return False
                 else:
-                    self.wait = 1
+                    self.wait = self.config['wait']
                 unreads = room_counters.json().get('unreads', 0)
-                users = "' '".join(im['usernames'])
                 self._log.debug(
-                    f"""There are {unreads} unread private messages in chat
-{im['_id']} between users '{users}'."""
+                    "There are %s unread private messages in chat %s between users %s.",
+                    unreads,
+                    im['_id'],
+                    users
                 )
                 if unreads and int(unreads) > 0:
                     if (im['_id'] not in self.notifications or
@@ -167,9 +175,10 @@ message(s) from '{im['lastMessage']['u']['name']}':
                 #     print(f"{int(room_counters.headers['X-RateLimit
                 # -Remaining'])} requests remaining...")
             else:
-                self._log.debug("Skipping because there are no messages")
+                self._log.debug("There are no messages in chat %s between users %s", im['_id'], users)
 
     def check_new_group_messages(self):
+        '''Check for new group messages'''
         groups = self.rc.groups_list().json()
         self._log.info(f"Checking {len(groups)} groups...")
         for group in groups['groups']:
@@ -206,7 +215,7 @@ message(s) from '{im['lastMessage']['u']['name']}':
                 if 'unreads' not in room_counters.json():
                     return False
             else:
-                self.wait = 1
+                self.wait = self.config['wait']
             unreads = room_counters.json()['unreads']
             if unreads and int(unreads) > 0:
                 if (group['_id'] not in self.notifications or
@@ -272,7 +281,7 @@ in '{group['name']}'"""
                 if 'unreads' not in room_counters.json():
                     return False
             else:
-                self.wait = 1
+                self.wait = self.config['wait']
             unreads = room_counters.json()['unreads']
             if unreads and int(unreads) > 0:
                 if (channel['_id'] not in self.notifications or
@@ -437,6 +446,7 @@ examples.ipynb'''
     default=True,
     help='Messages should be kept private and not sent to ntfy service.'
 )
+@click.option('--wait', '-w', default=1, help='Seconds to wait between queries')
 @click_config_file.configuration_option()
 def __main__(**kwargs):
     return rc_push(**kwargs)
